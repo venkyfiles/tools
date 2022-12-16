@@ -1,0 +1,63 @@
+
+#!/bin/bash
+# Ref: https://redis.io/docs/reference/optimization/cpu-profiling/
+## Create a Flame graph ####
+
+if [ "$1" == "" ]; then
+  echo -n "Enter PID of the process: "
+  read PID
+else
+  PID="$1"
+fi
+
+os=`cat /etc/os-release | grep PRETTY_NAME| awk -F'=' '{print $2}' | tr '[:upper:]' '[:lower:]'`
+app=`ps -ef | grep $PID | grep -v grep | head -1 | awk '{print $1}'`
+if [ "$app" == "" ]; then
+  echo "ERROR: No process exists with pid $PID"
+  exit
+fi
+## GET the PID of the process
+#PID=$(pgrep redis-server)
+TIME=60
+dir=$(basename .)
+dir=$(readlink -f .)
+dir=`pwd`
+#echo $dir
+IMAGE="$dir/$app-$PID-`date +"%Y-%m-%d-%H-%M"`.svg"
+echo "Flamegraph file:  $IMAGE "
+
+# Ubuntu
+if [[ "$os" =~ "ubuntu" ]]; then
+  sudo apt-get -y perf perl git
+fi
+
+# redhat
+if [[ "$os" =~ "rhel" ]]; then
+  echo "OS: RHEL"
+  sudo yum -y install perf perl
+fi
+
+# centos
+if [[ "$os" =~ "centos" ]]; then
+  sudo yum -y install perf perl
+fi
+
+
+if [ ! -d FlameGraph ]; then
+  git clone https://github.com/brendangregg/FlameGraph.git
+fi
+
+cd FlameGraph/
+sudo perf record -g --pid $PID -F 999 -- sleep $TIME
+
+#Using call graph inclusion threshold of 0.5%
+sudo perf report -g "graph,0.5,caller"
+sudo perf script > temp.perf.stacks
+
+stackcollapse-perf.pl temp.perf.stacks > temp.folded.stacks
+flamegraph.pl temp.folded.stacks > $IMAGE
+
+#./Flamegraph/stackcollapse-perf.pl temp.perf.stacks > temp.folded.stacks
+#./Flamegraph/flamegraph.pl temp.folded.stacks > $IMAGE
+
+echo "Created Flamegraph file:  $IMAGE "
